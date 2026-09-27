@@ -279,11 +279,69 @@ export class Opencode {
     })
   }
 
+  async sessionStatus(): Promise<Record<string, string>> {
+    if ((await this.detectProtocol()) === "v1") {
+      return (await this.request<Record<string, string>>("/session/status")) as Record<string, string>
+    }
+    const response = await this.request<{ data?: Record<string, string> }>("/api/session/status")
+    return response.data ?? {}
+  }
+
+  /**
+   * Subscribes to every session at once, unlike `subscribeSession`, which on V2 opens a
+   * per-session stream. Both wire formats are flattened to `{ type, properties }` so the caller
+   * does not have to branch on the protocol.
+   */
+  async subscribeEvents(signal: AbortSignal, onEvent: (event: { type: string; properties: Record<string, unknown> }) => void) {
+    const protocol = await this.detectProtocol()
+    const path = protocol === "v1" ? "/event" : "/api/event"
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      headers: {
+        Accept: "text/event-stream",
+        ...(this.authorization() ? { Authorization: this.authorization() } : {}),
+        ...(this.directory ? { "x-opencode-directory": this.directory } : {}),
+      },
+      signal,
+    })
+    if (!response.ok || !response.body) throw new ApiError(response.status, "No se pudo abrir el stream")
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let boundary = buffer.indexOf("\n\n")
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        for (const line of frame.split("\n")) {
+          if (!line.startsWith("data:")) continue
+          const raw = line.slice(5).trim()
+          if (!raw) continue
+          let parsed: Record<string, unknown>
+          try {
+            parsed = JSON.parse(raw) as Record<string, unknown>
+          } catch {
+            continue
+          }
+          // V1 wraps every frame as `{ directory, payload }`; V2 sends the record directly.
+          const inner = (parsed.payload ?? parsed) as Record<string, unknown>
+          const type = inner.type
+          if (typeof type !== "string" || type === "sync") continue
+          const properties =
+            protocol === "v1" ? ((inner.properties as Record<string, unknown>) ?? {}) : ((inner.data as Record<string, unknown>) ?? {})
+          onEvent({ type, properties })
+        }
+        boundary = buffer.indexOf("\n\n")
+      }
+    }
+  }
+
   // Event streams. Payloads are not interpreted: the caller treats any frame as a signal to
   // reload, which avoids reimplementing the event reducer for either protocol. V1 has no
   // per-session stream, so it falls back to the global bus.
-  async subscribeSession(sessionID: string, signal: AbortSignal, onEvent: () => void) {
-    const protocol = await this.detectProtocol()
+  async subscribeSession(sessionID: string, signal: AbortSignal, onEvent: () => void) {    const protocol = await this.detectProtocol()
     const path =
       protocol === "v1" ? "/event" : `/api/session/${encodeURIComponent(sessionID)}/event`
     const response = await fetch(`${this.baseUrl}${path}`, {

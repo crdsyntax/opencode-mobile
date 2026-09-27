@@ -9,6 +9,7 @@ import { ModelPicker } from "@/components/ModelPicker";
 import { useConnection } from "@/connection";
 import { Message } from "@/api";
 import { useKeyboardHeight } from "@/use-keyboard-height";
+import { setActiveSession } from "@/turn-watcher";
 import { theme } from "@/theme";
 
 export default function SessionScreen() {
@@ -40,6 +41,12 @@ export default function SessionScreen() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // A turn finishing in the session on screen should not raise a notification for it.
+  useEffect(() => {
+    setActiveSession(id);
+    return () => setActiveSession(undefined);
+  }, [id]);
 
   useEffect(() => {
     if (!client || !id) return;

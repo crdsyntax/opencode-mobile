@@ -2,11 +2,13 @@ import React from "react"
 import { Stack } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import { ConnectionProvider } from "@/connection"
+import { TurnWatcher } from "@/turn-watcher"
 import { theme } from "@/theme"
 
 export default function RootLayout() {
   return (
     <ConnectionProvider>
+      <TurnWatcher />
       <StatusBar style="light" />
       <Stack
         screenOptions={{

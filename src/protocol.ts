@@ -25,6 +25,8 @@ export type ChatMessage =
       readonly id: string
       readonly role: "assistant"
       readonly time: number
+      /** Set once the turn finishes; its presence is what marks a message as finished. */
+      readonly completed?: number
       readonly agent?: string
       readonly items: readonly ChatItem[]
       readonly error?: string
@@ -40,6 +42,12 @@ const asNumber = (value: unknown) => (typeof value === "number" ? value : 0)
 function createdAt(value: unknown): number {
   const time = (value as Json | undefined)?.time as Json | undefined
   return asNumber(time?.created)
+}
+
+function completedAt(value: unknown): number | undefined {
+  const time = (value as Json | undefined)?.time as Json | undefined
+  const completed = asNumber(time?.completed)
+  return completed > 0 ? completed : undefined
 }
 
 function toolTitle(part: Json): string | undefined {
@@ -95,6 +103,7 @@ export function fromV1(payload: readonly unknown[]): ChatMessage[] {
       id,
       role: "assistant",
       time,
+      completed: completedAt(info),
       agent: asString(info.agent) || undefined,
       items,
       error: error ? asString(error.message) || "error" : undefined,
@@ -147,6 +156,7 @@ export function fromV2(payload: readonly unknown[]): ChatMessage[] {
       id,
       role: "assistant",
       time,
+      completed: completedAt(message),
       agent: asString(message.agent) || undefined,
       items,
       error: error ? asString(error.message) || "error" : undefined,
