@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useConnection } from "./connection";
 import type { ChatMessage } from "./protocol";
 import { configureNotifications, notifyTurnFinished } from "./notifications";
@@ -18,6 +18,24 @@ let activeSession: string | undefined;
 /** The session currently on screen, so its own completions do not raise a notification. */
 export function setActiveSession(sessionID: string | undefined) {
   activeSession = sessionID;
+}
+
+type Debug = { events: number; lastEvent: string; settles: number; notified: number; problem: string };
+let debug: Debug = { events: 0, lastEvent: "-", settles: 0, notified: 0, problem: "-" };
+const debugListeners = new Set<(value: Debug) => void>();
+function setDebug(patch: Partial<Debug>) {
+  debug = { ...debug, ...patch };
+  for (const listener of debugListeners) listener(debug);
+}
+export function useWatcherDebug() {
+  const [value, setValue] = useState(debug);
+  useEffect(() => {
+    debugListeners.add(setValue);
+    return () => {
+      debugListeners.delete(setValue);
+    };
+  }, []);
+  return value;
 }
 
 const SETTLE_MS = 1500;
@@ -58,26 +76,46 @@ export function TurnWatcher() {
     };
 
     const settle = async (sessionID: string) => {
+      setDebug({ settles: debug.settles + 1 });
       try {
         const messages = await client.messages(sessionID);
+        const last = messages[messages.length - 1];
+        console.warn(
+          "[watcher] settle",
+          sessionID,
+          "mensajes=" + messages.length,
+          "ultimo=" + (last ? last.role : "ninguno"),
+          "completed=" + (last && last.role === "assistant" ? String(last.completed) : "-"),
+        );
         for (let index = messages.length - 1; index >= 0; index--) {
-          const message = messages[index];
+          const message = messages[index]
           // Only a finished assistant turn is worth announcing, and only the newest one.
           if (message.role !== "assistant" || !message.completed) break;
-          if (notified.has(message.id)) return;
+          if (notified.has(message.id)) {
+            console.warn("[watcher] ya avisado", message.id);
+            return;
+          }
           notified.add(message.id);
           const aborted = /abort/i.test(message.error ?? "");
-          if (aborted) return;
+          if (aborted) {
+            console.warn("[watcher] turno abortado, no avisa");
+            return;
+          }
+          const outcome = message.error ? "failure" : "success";
           await notifyTurnFinished({
             sessionTitle: await titleFor(sessionID),
-            outcome: message.error ? "failure" : "success",
+            outcome,
             preview: lastText(message),
             errorText: message.error,
           });
+          console.warn("[watcher] notificacion enviada", outcome, message.id);
+          setDebug({ notified: debug.notified + 1, problem: `enviado (${outcome})` });
           return;
         }
-      } catch {
-        // A failed read just means no notification this round.
+        setDebug({ problem: "sin turno completado" });
+      } catch (cause) {
+        console.warn("[watcher] settle fallo", cause);
+        setDebug({ problem: `error: ${cause instanceof Error ? cause.message : String(cause)}` });
       }
     };
 
@@ -102,12 +140,18 @@ export function TurnWatcher() {
       return typeof info?.sessionID === "string" ? (info.sessionID as string) : undefined;
     };
 
+    console.warn("[watcher] abriendo stream", "url=" + client.baseUrl, "dir=" + JSON.stringify(client.directory));
     void client
       .subscribeEvents(controller.signal, (event) => {
+        setDebug({ events: debug.events + 1, lastEvent: event.type });
+        console.warn("[watcher] evento", event.type);
         if (!event.type.startsWith("message.")) return;
         touch(sessionIDOf(event.properties));
       })
-      .catch(() => undefined);
+      .catch((cause) => {
+        console.warn("[watcher] stream fallo", cause);
+        setDebug({ problem: `stream: ${cause instanceof Error ? cause.message : String(cause)}` });
+      });
 
     return () => {
       controller.abort();

@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from "react";
+﻿import React, { useCallback, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Stack, router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useConnection } from "@/connection";
+import { useConnection } from "@/connection"
+import { useWatcherDebug } from "@/turn-watcher";
 import { Session } from "@/api";
 import { theme } from "@/theme";
 
@@ -17,6 +18,7 @@ function when(timestamp: number) {
 
 export default function SessionsScreen() {
   const { client, identity, error, ready } = useConnection();
+  const debug = useWatcherDebug();
   const [sessions, setSessions] = useState<readonly Session[]>([]);
   const [pending, setPending] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -104,6 +106,10 @@ export default function SessionsScreen() {
       />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <Text style={styles.debug}>
+        watcher Â· eventos {debug.events} ({debug.lastEvent}) Â·lecturas {debug.settles} Â· avisados{" "}
+        {debug.notified} Â· {debug.problem}
+      </Text>
       {identity.kind === "device" ? (
         <Text style={styles.identity}>Emparejado como {identity.name}</Text>
       ) : (
@@ -157,6 +163,7 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: theme.onPrimary, fontSize: 10, fontWeight: "800" },
   error: { color: theme.danger, fontSize: 12, paddingHorizontal: 16, paddingTop: 8 },
+  debug: { color: theme.textMuted, fontSize: 10, paddingHorizontal: 16, paddingBottom: 4 },
   identity: { color: theme.textMuted, fontSize: 12, paddingHorizontal: 16, paddingVertical: 6 },
   item: {
     flexDirection: "row",

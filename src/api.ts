@@ -1,6 +1,7 @@
-import { fetch } from "expo/fetch"
+﻿import { fetch } from "expo/fetch"
 import type { Device, DevicePairing, Handoff, Session } from "./contracts"
 import { fromV1, fromV2, type ChatMessage, type Protocol } from "./protocol"
+import { openSse } from "./sse"
 
 // The generated client is fetch plus erased type imports, so talking to the HttpApi directly
 // keeps the app independent of the opencode workspace while still typechecked against the
@@ -287,82 +288,70 @@ export class Opencode {
     return response.data ?? {}
   }
 
+  /** Headers every stream needs: auth plus the directory the sessions are scoped to. */
+  private streamHeaders() {
+    return {
+      ...(this.authorization() ? { Authorization: this.authorization() } : {}),
+      ...(this.directory ? { "x-opencode-directory": this.directory } : {}),
+    }
+  }
+
   /**
    * Subscribes to every session at once, unlike `subscribeSession`, which on V2 opens a
    * per-session stream. Both wire formats are flattened to `{ type, properties }` so the caller
    * does not have to branch on the protocol.
    */
-  async subscribeEvents(signal: AbortSignal, onEvent: (event: { type: string; properties: Record<string, unknown> }) => void) {
+  async subscribeEvents(
+    signal: AbortSignal,
+    onEvent: (event: { type: string; properties: Record<string, unknown> }) => void,
+  ): Promise<void> {
     const protocol = await this.detectProtocol()
     const path = protocol === "v1" ? "/event" : "/api/event"
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      headers: {
-        Accept: "text/event-stream",
-        ...(this.authorization() ? { Authorization: this.authorization() } : {}),
-        ...(this.directory ? { "x-opencode-directory": this.directory } : {}),
-      },
-      signal,
-    })
-    if (!response.ok || !response.body) throw new ApiError(response.status, "No se pudo abrir el stream")
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let boundary = buffer.indexOf("\n\n")
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary)
-        buffer = buffer.slice(boundary + 2)
-        for (const line of frame.split("\n")) {
-          if (!line.startsWith("data:")) continue
-          const raw = line.slice(5).trim()
-          if (!raw) continue
+    console.warn(`[api] stream de eventos -> ${path} protocolo=${protocol} dir=${JSON.stringify(this.directory)}`)
+    return new Promise<void>((resolve, reject) => {
+      openSse({
+        url: `${this.baseUrl}${path}`,
+        headers: this.streamHeaders(),
+        signal,
+        onFrame: (raw) => {
           let parsed: Record<string, unknown>
           try {
             parsed = JSON.parse(raw) as Record<string, unknown>
           } catch {
-            continue
+            return
           }
           // V1 wraps every frame as `{ directory, payload }`; V2 sends the record directly.
           const inner = (parsed.payload ?? parsed) as Record<string, unknown>
           const type = inner.type
-          if (typeof type !== "string" || type === "sync") continue
+          if (typeof type !== "string" || type === "sync") return
           const properties =
-            protocol === "v1" ? ((inner.properties as Record<string, unknown>) ?? {}) : ((inner.data as Record<string, unknown>) ?? {})
+            protocol === "v1"
+              ? ((inner.properties as Record<string, unknown>) ?? {})
+              : ((inner.data as Record<string, unknown>) ?? {})
           onEvent({ type, properties })
-        }
-        boundary = buffer.indexOf("\n\n")
-      }
-    }
+        },
+        onError: (cause) => reject(cause instanceof ApiError ? cause : new ApiError(0, String(cause))),
+      })
+      // The stream lives until the caller aborts it; resolution only happens if it never opened.
+      signal.addEventListener("abort", () => resolve(), { once: true })
+    })
   }
 
   // Event streams. Payloads are not interpreted: the caller treats any frame as a signal to
   // reload, which avoids reimplementing the event reducer for either protocol. V1 has no
   // per-session stream, so it falls back to the global bus.
-  async subscribeSession(sessionID: string, signal: AbortSignal, onEvent: () => void) {    const protocol = await this.detectProtocol()
-    const path =
-      protocol === "v1" ? "/event" : `/api/session/${encodeURIComponent(sessionID)}/event`
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      headers: {
-        Accept: "text/event-stream",
-        ...(this.authorization() ? { Authorization: this.authorization() } : {}),
-        ...(this.directory ? { "x-opencode-directory": this.directory } : {}),
-      },
-      signal,
+  async subscribeSession(sessionID: string, signal: AbortSignal, onEvent: () => void): Promise<void> {
+    const protocol = await this.detectProtocol()
+    const path = protocol === "v1" ? "/event" : `/api/session/${encodeURIComponent(sessionID)}/event`
+    return new Promise<void>((resolve, reject) => {
+      openSse({
+        url: `${this.baseUrl}${path}`,
+        headers: this.streamHeaders(),
+        signal,
+        onFrame: () => onEvent(),
+        onError: (cause) => reject(cause instanceof ApiError ? cause : new ApiError(0, String(cause))),
+      })
+      signal.addEventListener("abort", () => resolve(), { once: true })
     })
-    if (!response.ok || !response.body) throw new ApiError(response.status, "No se pudo abrir el stream")
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      if (!buffer.includes("\n\n")) continue
-      buffer = ""
-      onEvent()
-    }
   }
 }

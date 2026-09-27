@@ -14,6 +14,18 @@ export type TurnOutcome = "success" | "failure";
 
 let configured: Promise<void> | undefined;
 
+// Without a handler expo-notifications has no behaviour to apply and drops the notification
+// instead of presenting it, so this has to be registered once, as early as possible.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 export function configureNotifications() {
   configured ??= (async () => {
     if (Platform.OS === "android") {
@@ -58,7 +70,7 @@ export async function notifyTurnFinished(input: {
   await configureNotifications();
   const failure = input.outcome === "failure";
   try {
-    await Notifications.scheduleNotificationAsync({
+    const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: failure ? `Fallo · ${input.sessionTitle}` : input.sessionTitle,
         body: failure
@@ -69,7 +81,9 @@ export async function notifyTurnFinished(input: {
       },
       trigger: null,
     });
-  } catch {
+    console.warn("[notificaciones] agendada id=" + id + " canal=" + (failure ? FAILURE_CHANNEL : SUCCESS_CHANNEL));
+  } catch (cause) {
     // A missing POST_NOTIFICATIONS grant or a killed process must never break the watcher.
+    console.warn("[notificaciones] error al agendar", cause);
   }
 }
