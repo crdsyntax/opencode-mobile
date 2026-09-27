@@ -1,12 +1,4 @@
-/**
- * Server-sent events over XMLHttpRequest.
- *
- * `expo/fetch` exposes a `body` reader, but on device it does not deliver the individual frames of a
- * long lived event stream: only the frames emitted right after the connection opens arrive, and the
- * rest of the stream is silently dropped. Reading `responseText` while the request is still
- * unfulfilled is the reliable way to consume SSE in React Native, so the event streams do not use
- * fetch at all.
- */
+
 
 export type SseFrame = (data: string) => void
 
@@ -20,14 +12,14 @@ export function openSse(input: {
 }) {
   const request = new XMLHttpRequest()
   let opened = false
-  // XHR has no stream API, so the growing responseText is re-read and only the new tail parsed.
+  
   let consumed = 0
 
   const abort = () => {
     try {
       request.abort()
     } catch {
-      // Already finished.
+      
     }
   }
   input.signal.addEventListener("abort", abort)
@@ -37,7 +29,7 @@ export function openSse(input: {
   }
 
   request.open("GET", input.url, true)
-  // A cache buster keeps intermediaries from buffering the stream.
+  
   request.setRequestHeader("Accept", "text/event-stream")
   request.setRequestHeader("Cache-Control", "no-cache")
   for (const [name, value] of Object.entries(input.headers)) request.setRequestHeader(name, value)
@@ -62,7 +54,7 @@ export function openSse(input: {
   }
 
   request.onreadystatechange = () => {
-    // 3 is LOADING: headers are in and the body is still arriving.
+    
     if (request.readyState === 3) {
       if (!opened) {
         opened = true

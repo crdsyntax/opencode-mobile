@@ -1,19 +1,11 @@
-/**
- * Generates the two notification tones shipped in android/app/src/main/res/raw.
- *
- * Android binds a sound to a notification *channel* at creation time, so success and failure need
- * two channels and therefore two distinct files. They are synthesised here rather than shipped as
- * binary assets to keep the repository free of opaque blobs.
- *
- * Run with: bun scripts/make-notification-sounds.ts
- */
+﻿
 import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 const RATE = 44100
 
 function envelope(index: number, total: number) {
-  // Fast attack, exponential decay, and a short fade out so there is no click at the end.
+  
   const t = index / total
   const attack = Math.min(1, t / 0.02)
   const decay = Math.exp(-4.5 * t)
@@ -21,7 +13,7 @@ function envelope(index: number, total: number) {
   return attack * decay * tail
 }
 
-/** One tone with a soft attack/decay. `harmonic` adds a quiet octave for body. */
+
 function tone(freq: number, seconds: number, gain = 0.42, harmonic = 0.18) {
   const total = Math.floor(RATE * seconds)
   const out = new Float32Array(total)
@@ -57,8 +49,8 @@ function wav(samples: Float32Array) {
   buffer.write("WAVE", 8, "ascii")
   buffer.write("fmt ", 12, "ascii")
   buffer.writeUInt32LE(16, 16)
-  buffer.writeUInt16LE(1, 20) // PCM
-  buffer.writeUInt16LE(1, 22) // mono
+  buffer.writeUInt16LE(1, 20) 
+  buffer.writeUInt16LE(1, 22) 
   buffer.writeUInt32LE(RATE, 24)
   buffer.writeUInt32LE(RATE * 2, 28)
   buffer.writeUInt16LE(2, 32)
@@ -72,10 +64,10 @@ function wav(samples: Float32Array) {
   return buffer
 }
 
-// Success: a rising major arpeggio, reads as "done" without being alarming.
+
 const success = concat([tone(659.25, 0.13), tone(987.77, 0.26, 0.4)])
 
-// Failure: two low pulses a fifth apart, deliberately dull and easy to recognise while pocketed.
+
 const failure = concat([tone(233.08, 0.16, 0.46, 0.3), silence(0.06), tone(174.61, 0.32, 0.46, 0.3)])
 
 const target = join(process.cwd(), "android", "app", "src", "main", "res", "raw")
@@ -86,5 +78,4 @@ for (const [name, samples] of [
 ] as const) {
   const file = join(target, name)
   writeFileSync(file, wav(samples))
-  console.log(`wrote ${file} (${(samples.length / RATE).toFixed(2)}s)`)
 }

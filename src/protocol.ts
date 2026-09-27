@@ -1,16 +1,4 @@
-/**
- * Message normalization across opencode's two wire formats.
- *
- * The server is mid-migration from V1 to V2 and both are served side by side:
- *
- * - V1 (`/session/:id/message`) returns `{ info, parts }[]`. `parts` is a flat stream that mixes
- *   text, reasoning, tool calls and step boundaries. This is what real, long-running sessions use.
- * - V2 (`/api/session/:id/message`) returns a tagged union of `SessionMessage.Message`, where an
- *   assistant carries a nested `content[]`. V2 projects its own store, so for a V1 session it can
- *   legitimately return a single message.
- *
- * The UI must not care which one it got, so both are flattened into the shapes below.
- */
+
 
 export type Protocol = "v1" | "v2"
 
@@ -25,7 +13,7 @@ export type ChatMessage =
       readonly id: string
       readonly role: "assistant"
       readonly time: number
-      /** Set once the turn finishes; its presence is what marks a message as finished. */
+      
       readonly completed?: number
       readonly agent?: string
       readonly items: readonly ChatItem[]
@@ -56,7 +44,7 @@ function toolTitle(part: Json): string | undefined {
   return title.length > 0 ? title : undefined
 }
 
-/** Flattens the V1 `{ info, parts }` stream. */
+
 export function fromV1(payload: readonly unknown[]): ChatMessage[] {
   const out: ChatMessage[] = []
   for (const entry of payload) {
@@ -68,7 +56,7 @@ export function fromV1(payload: readonly unknown[]): ChatMessage[] {
     const parts = asArray(message.parts)
 
     if (role === "user") {
-      // The V1 user message may also carry files, which are not part of ChatItem.
+      
       const text = parts
         .filter((part) => part.type === "text")
         .map((part) => asString(part.text))
@@ -112,7 +100,7 @@ export function fromV1(payload: readonly unknown[]): ChatMessage[] {
   return out
 }
 
-/** Flattens the V2 `SessionMessage.Message` union. */
+
 export function fromV2(payload: readonly unknown[]): ChatMessage[] {
   const out: ChatMessage[] = []
   for (const raw of payload) {

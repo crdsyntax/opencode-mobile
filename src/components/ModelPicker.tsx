@@ -49,7 +49,7 @@ export function ModelPicker({ visible, onClose }: { visible: boolean; onClose: (
     }
   }, [visible, load]);
 
-  // 120+ models come back from the server, so the list is filtered as the user types.
+  
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return models;
@@ -68,7 +68,7 @@ export function ModelPicker({ visible, onClose }: { visible: boolean; onClose: (
 
   const keyOf = (item: ModelOption) => `${item.providerID}/${item.modelID}`;
   const selected = model ? keyOf(model) : undefined;
-  // The sheet sits at the bottom of a full-screen modal, so it needs the keyboard clearance too.
+  
   const bottomPad = Platform.OS === "ios" ? insets.bottom : keyboard > 0 ? keyboard : insets.bottom;
 
   return (

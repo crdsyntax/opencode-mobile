@@ -61,10 +61,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         try {
           setModelState(JSON.parse(savedModel) as ModelOption)
         } catch {
-          // A model saved by an older build is discarded rather than blocking startup.
+          
         }
       }
-      // A paired device token is preferred: it is scoped to this phone and survives a password change.
+      
       if (token) setIdentity({ kind: "device", token, id: deviceId ?? "", name: name ?? "movil" })
       else if (password) setIdentity({ kind: "password", username: username ?? "opencode", password })
       setReady(true)
@@ -92,8 +92,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     setIdentity({ kind: "password", username, password })
   }, [])
 
-  // The base URL and directory are passed in explicitly rather than read back from state, which
-  // would still hold the previous value on the first render after a field is edited.
+  
+  
   const pair = useCallback(async (server: string, dir: string, code: string, name: string) => {
     const client = new Opencode(server, undefined, dir)
     const paired = await client.pair({ code: code.trim().toUpperCase(), name, kind: "mobile", platform: "android" })

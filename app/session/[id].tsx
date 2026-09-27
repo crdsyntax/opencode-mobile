@@ -42,7 +42,7 @@ export default function SessionScreen() {
     void reload();
   }, [reload]);
 
-  // A turn finishing in the session on screen should not raise a notification for it.
+  
   useEffect(() => {
     setActiveSession(id);
     return () => setActiveSession(undefined);
@@ -53,7 +53,7 @@ export default function SessionScreen() {
     const controller = new AbortController();
     void client
       .subscribeSession(id, controller.signal, () => {
-        // Durable frames are coalesced into a single reload so a long turn does not thrash the UI.
+        
         if (pending.current) clearTimeout(pending.current)
         pending.current = setTimeout(() => void reload(), 120)
       })
@@ -89,8 +89,8 @@ export default function SessionScreen() {
     }
   }
 
-  // Android draws edge to edge and no longer resizes the window for the IME, so the composer is
-  // padded by the measured keyboard height. iOS keeps letting KeyboardAvoidingView do it.
+  
+  
   const bottomPad = Platform.OS === "ios" ? insets.bottom : keyboard > 0 ? keyboard : insets.bottom;
 
   return (

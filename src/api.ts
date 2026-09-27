@@ -3,13 +3,13 @@ import type { Device, DevicePairing, Handoff, Session } from "./contracts"
 import { fromV1, fromV2, type ChatMessage, type Protocol } from "./protocol"
 import { openSse } from "./sse"
 
-// The generated client is fetch plus erased type imports, so talking to the HttpApi directly
-// keeps the app independent of the opencode workspace while still typechecked against the
-// real generated contracts (see ./contracts).
+
+
+
 export type Message = ChatMessage
 export type { Device, DevicePairing, Handoff, Protocol, Session }
 
-/** A runnable model, identified the same way the prompt endpoint expects it. */
+
 export type ModelOption = {
   readonly providerID: string
   readonly modelID: string
@@ -33,8 +33,8 @@ export type Credentials =
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-// Hermes does not ship btoa, so Basic credentials are encoded here instead of relying on a
-// Node or DOM global that may be absent on device.
+
+
 function base64(input: string) {
   const bytes = new TextEncoder().encode(input)
   let output = ""
@@ -59,20 +59,12 @@ export class Opencode {
   constructor(baseUrl: string, credentials?: Credentials, directory?: string, protocol?: Protocol) {
     this.baseUrl = baseUrl.replace(/\/+$/, "")
     this.credentials = credentials
-    // Sessions are scoped to a directory, so every request has to name the one it is working in.
+    
     this.directory = directory?.trim() || undefined
     this.protocol = protocol
   }
 
-  /**
-   * Resolves which wire format the server speaks, mirroring the desktop's `server-protocol.ts`.
-   *
-   * Probing has to distinguish "route absent" from "not authorized". The legacy `/global/*` routes
-   * only accept Basic auth, so a paired device token gets a 401 there even on a server that fully
-   * supports V1. Treating that 401 as "not V1" silently downgrades a device to V2, where a V1
-   * session projects to a single message. The shape of the response body is therefore the signal,
-   * not the status code.
-   */
+  
   async detectProtocol(): Promise<Protocol> {
     if (this.protocol) return this.protocol
     const probe = async (path: string) => {
@@ -120,7 +112,7 @@ export class Opencode {
         if (body.message) message = body.message
         tag = body._tag
       } catch {
-        // Non-JSON error body; the status text is the best available detail.
+        
       }
       throw new ApiError(response.status, message, tag)
     }
@@ -134,8 +126,8 @@ export class Opencode {
 
   async sessions(): Promise<readonly Session[]> {
     if ((await this.detectProtocol()) === "v1") {
-      // V1 sessions carry a different set of fields than the V2 contract, so only the fields the
-      // list view actually reads are mapped and the rest is left out rather than faked.
+      
+      
       const legacy = await this.request<readonly unknown[]>("/session")
       return legacy.map((entry) => {
         const value = entry as Record<string, unknown>
@@ -174,8 +166,8 @@ export class Opencode {
   async prompt(sessionID: string, text: string, model?: ModelOption) {
     const id = encodeURIComponent(sessionID)
     if ((await this.detectProtocol()) === "v1") {
-      // V1 takes a bare parts array and resolves only once the assistant has replied, so the
-      // request has to stay open while the turn runs.
+      
+      
       await this.request(`/session/${id}/message`, {
         method: "POST",
         body: JSON.stringify({
@@ -191,13 +183,7 @@ export class Opencode {
     })
   }
 
-  /**
-   * Lists the models the connected server can run.
-   *
-   * The catalog is read from the config providers route, whose `models` field is keyed by model id
-   * rather than being an array, and whose payload is wrapped in `data` on V2. Both shapes are
-   * normalized here so the picker does not have to care which protocol negotiated.
-   */
+  
   async models(): Promise<{ models: readonly ModelOption[]; fallback: ModelOption | undefined }> {
     const path = (await this.detectProtocol()) === "v1" ? "/config/providers" : "/api/config/providers"
     const body = await this.request<Record<string, unknown>>(path)
@@ -208,7 +194,7 @@ export class Opencode {
       const providerID = typeof provider.id === "string" ? provider.id : undefined
       if (!providerID) continue
       const catalog = provider.models
-      // `models` arrives either as a map keyed by id or as an array of model records.
+      
       const entries =
         Array.isArray(catalog)
           ? (catalog as readonly Record<string, unknown>[]).map((value) => [undefined, value] as const)
@@ -246,8 +232,8 @@ export class Opencode {
     await this.request(`/api/session/${id}/interrupt`, { method: "POST" })
   }
 
-  // Redeeming a pairing code is the only route that must work without credentials, so it is
-  // sent anonymously rather than with whatever the device already holds.
+  
+  
   async pair(input: { code: string; name: string; kind: "mobile" | "desktop"; platform?: string }) {
     return await this.request<DevicePairing>("/api/device/pair", {
       method: "POST",
@@ -260,8 +246,8 @@ export class Opencode {
     return await this.request<readonly Handoff[]>("/api/handoff/pending")
   }
 
-  // Any authenticated client, including a paired device, can see the registry in order to pick
-  // a handoff target.
+  
+  
   async devices() {
     return await this.request<readonly Device[]>("/api/device")
   }
@@ -288,7 +274,7 @@ export class Opencode {
     return response.data ?? {}
   }
 
-  /** Headers every stream needs: auth plus the directory the sessions are scoped to. */
+  
   private streamHeaders() {
     return {
       ...(this.authorization() ? { Authorization: this.authorization() } : {}),
@@ -296,18 +282,13 @@ export class Opencode {
     }
   }
 
-  /**
-   * Subscribes to every session at once, unlike `subscribeSession`, which on V2 opens a
-   * per-session stream. Both wire formats are flattened to `{ type, properties }` so the caller
-   * does not have to branch on the protocol.
-   */
+  
   async subscribeEvents(
     signal: AbortSignal,
     onEvent: (event: { type: string; properties: Record<string, unknown> }) => void,
   ): Promise<void> {
     const protocol = await this.detectProtocol()
     const path = protocol === "v1" ? "/event" : "/api/event"
-    console.warn(`[api] stream de eventos -> ${path} protocolo=${protocol} dir=${JSON.stringify(this.directory)}`)
     return new Promise<void>((resolve, reject) => {
       openSse({
         url: `${this.baseUrl}${path}`,
@@ -320,7 +301,7 @@ export class Opencode {
           } catch {
             return
           }
-          // V1 wraps every frame as `{ directory, payload }`; V2 sends the record directly.
+          
           const inner = (parsed.payload ?? parsed) as Record<string, unknown>
           const type = inner.type
           if (typeof type !== "string" || type === "sync") return
@@ -332,14 +313,14 @@ export class Opencode {
         },
         onError: (cause) => reject(cause instanceof ApiError ? cause : new ApiError(0, String(cause))),
       })
-      // The stream lives until the caller aborts it; resolution only happens if it never opened.
+      
       signal.addEventListener("abort", () => resolve(), { once: true })
     })
   }
 
-  // Event streams. Payloads are not interpreted: the caller treats any frame as a signal to
-  // reload, which avoids reimplementing the event reducer for either protocol. V1 has no
-  // per-session stream, so it falls back to the global bus.
+  
+  
+  
   async subscribeSession(sessionID: string, signal: AbortSignal, onEvent: () => void): Promise<void> {
     const protocol = await this.detectProtocol()
     const path = protocol === "v1" ? "/event" : `/api/session/${encodeURIComponent(sessionID)}/event`

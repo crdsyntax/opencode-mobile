@@ -2,16 +2,7 @@ import React, { useMemo } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 
-/**
- * Renders assistant text as markdown.
- *
- * The server returns raw markdown, so rendering it inside a plain `<Text>` shows the syntax
- * literally: `**bold**`, fenced code blocks, list bullets and so on. Markdown is common in these
- * messages because they are written by a model that assumes a markdown renderer downstream.
- *
- * Code blocks are the main case worth styling: they are where the actual substance sits, and a
- * long line in a proportional font is unreadable on a phone.
- */
+
 export function MarkdownText({ children }: { children: string }) {
   const rules = useMemo(() => buildRules(), []);
   return (
