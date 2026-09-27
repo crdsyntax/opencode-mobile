@@ -5,19 +5,23 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageRow } from "@/components/MessageRow";
 import { DevicePicker } from "@/components/DevicePicker";
+import { ModelPicker } from "@/components/ModelPicker";
 import { useConnection } from "@/connection";
 import { Message } from "@/api";
+import { useKeyboardHeight } from "@/use-keyboard-height";
 import { theme } from "@/theme";
 
 export default function SessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { client } = useConnection();
+  const { client, model, setModel } = useConnection();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardHeight();
   const [messages, setMessages] = useState<readonly Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -59,7 +63,7 @@ export default function SessionScreen() {
     setInput("")
     setBusy(true)
     try {
-      await client.prompt(id, text)
+      await client.prompt(id, text, model);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo enviar el mensaje")
       setBusy(false)
@@ -78,8 +82,12 @@ export default function SessionScreen() {
     }
   }
 
+  // Android draws edge to edge and no longer resizes the window for the IME, so the composer is
+  // padded by the measured keyboard height. iOS keeps letting KeyboardAvoidingView do it.
+  const bottomPad = Platform.OS === "ios" ? insets.bottom : keyboard > 0 ? keyboard : insets.bottom;
+
   return (
-    <View style={[styles.flex, { paddingBottom: insets.bottom }]}>
+    <View style={styles.flex}>
       <Stack.Screen
         options={{
           title: "Chat",
@@ -111,33 +119,43 @@ export default function SessionScreen() {
         />
       )}
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.composer}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Mensaje"
-            placeholderTextColor={theme.textMuted}
-            multiline
-          />
-          {busy ? (
-            <TouchableOpacity style={[styles.send, styles.stop]} onPress={interrupt}>
-              <Ionicons name="stop" size={20} color={theme.onPrimary} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.send, !input.trim() && styles.sendDisabled]}
-              onPress={send}
-              disabled={!input.trim()}
-            >
-              <Ionicons name="arrow-up" size={20} color={theme.onPrimary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+      <View style={[styles.dock, { paddingBottom: bottomPad }]}>
+        <TouchableOpacity style={styles.modelRow} onPress={() => setModelOpen(true)}>
+          <Ionicons name="cube-outline" size={14} color={theme.textMuted} />
+          <Text style={styles.modelLabel} numberOfLines={1}>
+            {model ? model.name : "Predeterminado del servidor"}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
+        </TouchableOpacity>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={styles.composer}>
+            <TextInput
+              style={styles.input}
+              value={input}
+              onChangeText={setInput}
+              placeholder="Mensaje"
+              placeholderTextColor={theme.textMuted}
+              multiline
+            />
+            {busy ? (
+              <TouchableOpacity style={[styles.send, styles.stop]} onPress={interrupt}>
+                <Ionicons name="stop" size={20} color={theme.onPrimary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.send, !input.trim() && styles.sendDisabled]}
+                onPress={send}
+                disabled={!input.trim()}
+              >
+                <Ionicons name="arrow-up" size={20} color={theme.onPrimary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </View>
 
       {id ? <DevicePicker visible={pickerOpen} sessionID={id} onClose={() => setPickerOpen(false)} /> : null}
+      <ModelPicker visible={modelOpen} onClose={() => setModelOpen(false)} />
     </View>
   );
 }
@@ -148,15 +166,21 @@ const styles = StyleSheet.create({
   list: { paddingVertical: 12, paddingTop: 24 },
   empty: { color: theme.textMuted, fontSize: 14 },
   error: { color: theme.danger, fontSize: 12, paddingHorizontal: 16, paddingVertical: 6 },
+  dock: { backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.border },
+  modelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  modelLabel: { flex: 1, color: theme.textMuted, fontSize: 12 },
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
     paddingVertical: 8,
     gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    backgroundColor: theme.surface,
   },
   input: {
     flex: 1,

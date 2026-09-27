@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatItem, ChatMessage } from "@/protocol";
+import { MarkdownText } from "./MarkdownText";
 import { theme } from "@/theme";
 
 function ToolRow({ item }: { item: ChatItem & { kind: "tool" } }) {
@@ -17,12 +18,22 @@ function ToolRow({ item }: { item: ChatItem & { kind: "tool" } }) {
   );
 }
 
+function Reasoning({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Pressable onPress={() => setOpen((value) => !value)}>
+      <Text style={styles.reasoningToggle}>{open ? "▾ Razonamiento" : "▸ Razonamiento"}</Text>
+      {open ? <MarkdownText>{text}</MarkdownText> : null}
+    </Pressable>
+  );
+}
+
 export function MessageRow({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <View style={[styles.bubble, styles.userBubble]}>
         <Text style={styles.role}>Tu</Text>
-        <Text style={styles.text}>{message.text}</Text>
+        <MarkdownText>{message.text}</MarkdownText>
       </View>
     );
   }
@@ -30,7 +41,7 @@ export function MessageRow({ message }: { message: ChatMessage }) {
   if (message.role === "system") {
     return (
       <View style={[styles.bubble, styles.systemBubble]}>
-        <Text style={styles.systemText}>{message.text}</Text>
+        <MarkdownText>{message.text}</MarkdownText>
       </View>
     );
   }
@@ -40,8 +51,8 @@ export function MessageRow({ message }: { message: ChatMessage }) {
       <Text style={styles.role}>opencode{message.agent ? ` · ${message.agent}` : ""}</Text>
       {message.items.map((item, index) => {
         const key = `${message.id}-${index}`;
-        if (item.kind === "text") return <Text key={key} style={styles.text}>{item.text}</Text>;
-        if (item.kind === "reasoning") return <Text key={key} style={styles.reasoning}>{item.text}</Text>;
+        if (item.kind === "text") return <MarkdownText key={key}>{item.text}</MarkdownText>;
+        if (item.kind === "reasoning") return <Reasoning key={key} text={item.text} />;
         return <ToolRow key={key} item={item} />;
       })}
       {message.error ? <Text style={styles.error}>{message.error}</Text> : null}
@@ -55,9 +66,7 @@ const styles = StyleSheet.create({
   assistantBubble: { backgroundColor: theme.surface, alignSelf: "flex-start", maxWidth: "94%" },
   systemBubble: { backgroundColor: theme.surfaceAlt, alignSelf: "stretch" },
   role: { color: theme.textMuted, fontSize: 11, fontWeight: "700" },
-  text: { color: theme.text, fontSize: 15, lineHeight: 22 },
-  systemText: { color: theme.textMuted, fontSize: 13, lineHeight: 19 },
-  reasoning: { color: theme.textMuted, fontSize: 13, lineHeight: 19, fontStyle: "italic" },
+  reasoningToggle: { color: theme.textMuted, fontSize: 12, fontWeight: "600" },
   tool: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: theme.surfaceAlt, borderRadius: 10, padding: 10 },
   toolTitle: { color: theme.text, fontSize: 13, fontWeight: "600", flex: 1 },
   toolStatus: { color: theme.textMuted, fontSize: 11 },

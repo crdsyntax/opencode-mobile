@@ -40,7 +40,10 @@ emparejamiento y el handoff.
 | Estado de conexion en vivo | Funcional |
 | Listado y creacion de sesiones | Funcional |
 | Ver mensajes, texto, razonamiento y herramientas | Funcional |
+| Renderizado de markdown (negrita, codigo, listas, tablas) | Funcional |
 | Enviar mensaje | Funcional |
+| El chat se elevate con el teclado del telefono | Funcional |
+| Selector de modelo (120+ modelos, con buscador) | Funcional |
 | Streaming en vivo (SSE) | Funcional |
 | Detener generacion | Funcional |
 | Bandeja de handoffs recibidos | Funcional |
@@ -52,15 +55,17 @@ emparejamiento y el handoff.
 
 Aprobar permisos, revision de diffs, terminal (PTY), notificaciones push, escaneo de codigo QR,
 subida de adjuntos, markdown enriquecido, paginacion de historial y selector de agente.
-
 ---
 
 ## Puesta en marcha
 
+Este proyecto usa **bun**. No uses npm.
+
 ```bash
-npm install --legacy-peer-deps
-npx expo prebuild --platform android
-cd android && ./gradlew.bat assembleRelease     # Windows
+bun install
+bunx expo prebuild --platform android
+cd android && ./gradlew assembleRelease        # Linux/macOS
+cd android && .\gradlew.bat assembleRelease   # Windows
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
@@ -71,8 +76,42 @@ JAVA_HOME=C:\Program Files\Android\Android Studio\jbr
 ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
 ```
 
+### Requisito en Windows: CMake 3.31 o superior
+
+El build nativo **falla** si el SDK trae la version de CMake por defecto, con un error asi:
+
+```
+ninja: error: Stat(.../RNGestureHandlerDetectorShadowNode.cpp.o):
+  Filename longer than 260 characters
+```
+
+CMake espeja la ruta absoluta de cada fuente dentro del directorio de compilacion, asi que la
+duplica: el objeto acaba en ~370 caracteres. `LongPathsEnabled` ya esta activo en el registro, pero
+el `ninja.exe` que empaqueta CMake 3.22.1 es anterior al manifiesto de rutas largas y por tanto no lo
+respeta. Ninguna ruta corta lo resuelve, porque el espejado la alarga otra vez.
+
+La solucion es usar un CMake cuyo ninja ya soporte rutas largas:
+
+```powershell
+sdkmanager.bat "cmake;3.31.6"
+```
+
+Y apuntar el build a el en `android/local.properties` (este fichero es local, no se versiona):
+
+```properties
+cmake.dir=C\:\\Users\\TU_USUARIO\\AppData\\Local\\Android\\Sdk\\cmake\\3.31.6
+```
+
+Si cambias de version de CMake, borra `android/app/.cxx` para que se regenere con las rutas nuevas.
+
 `assembleRelease` firma con el keystore de debug, que es lo que deja el template de Expo. Para
 distribucion real hace falta un keystore propio.
+
+> `bunfig.toml` fija `linker = "hoisted"`. El layout aislado por defecto de bun anida cada paquete
+> en `node_modules/.bun/<paquete>@<version>/`, lo que duplica la profundidad de esas mismas rutas.
+
+> `punycode` figura como dependencia explicita porque `markdown-it` la usa sin declararla, y Metro
+> no la resuelve por su cuenta. Sin ella el empaquetado del bundle falla.
 
 ### Conectar el movil
 
@@ -100,11 +139,13 @@ src/
   api.ts                   cliente HTTP tipado + deteccion de protocolo + SSE
   contracts.ts             contratos de API (Session, Device, Handoff)
   protocol.ts              normalizacion de mensajes V1 y V2
-  connection.tsx           contexto de conexion y credenciales
+  connection.tsx           contexto de conexion, credenciales y modelo elegido
   theme.ts                 paleta
+  use-keyboard-height.ts   altura real del teclado
   components/
     MessageRow.tsx         render de mensajes
     DevicePicker.tsx       selector de destino para handoff
+    ModelPicker.tsx        selector de modelo con buscador
 ```
 
 ### La decision de diseño que mas importa: V1 y V2
@@ -132,6 +173,18 @@ V2 y dejaria la lista de mensajes vacia.
 
 ### Otros puntos
 
+- **El teclado lo mide la app, no el sistema.** Android dibuja *edge to edge* y ya no redimensiona la
+  ventana cuando sube el IME, de modo que `KeyboardAvoidingView` se queda sin nada que compensar: en
+  Android su `behavior` era `undefined` y el compositor no se movia, tapandolo el teclado. La app
+  escucha `keyboardDidShow` y aplica esa altura como `paddingBottom`. En iOS se sigue usando
+  `KeyboardAvoidingView`, que si funciona. Hook en `src/use-keyboard-height.ts`.
+- **El modelo viaja en cada prompt.** `POST /session/:id/message` acepta
+  `model: { providerID, modelID }`, opcional. Si no eliges ninguno, la app no envia el campo y manda
+  el que tenga configurado el servidor. La eleccion se persiste en SecureStore.
+- **El catalogo de modelos** sale de `GET /config/providers`, cuyo campo `models` es un **mapa**
+  indexado por id, no un array, y viene envuelto en `data` en V2. `Opencode.models()` normaliza
+  ambas formas. En el servidor de pruebas son 120 modelos en 4 proveedores, asi que la lista se
+  filtra al escribir.
 - **Fuera del workspace de opencode.** No requiere clonar el monorepo ni compilar el servidor.
 - **Streaming por recarga coalescada.** Al llegar cualquier frame del stream se recarga la lista de
   mensajes, con 120 ms de agrupamiento. Es correcto y simple, pero no es streaming fino: no reduce

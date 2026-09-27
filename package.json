@@ -1,7 +1,8 @@
 {
-  "name": "@opencode-ai/mobile",
+  "name": "opencode-mobile",
   "version": "1.0.0",
   "main": "expo-router/entry",
+  "packageManager": "bun@1.4.0",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "expo": "~57.0.25",
@@ -13,8 +14,10 @@
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "punycode": "^2.3.1",
     "react": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-markdown-display": "^7.0.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0"
   },
@@ -28,6 +31,5 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit"
-  },
-  "private": true
+  }
 }

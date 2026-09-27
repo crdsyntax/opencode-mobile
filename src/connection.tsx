@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import * as SecureStore from "expo-secure-store"
-import { ApiError, Credentials, Opencode } from "./api"
+import { ApiError, Credentials, ModelOption, Opencode } from "./api"
 
 const BASE_URL_KEY = "opencode.baseUrl"
 const PASSWORD_KEY = "opencode.password"
@@ -9,6 +9,7 @@ const DEVICE_TOKEN_KEY = "opencode.deviceToken"
 const DEVICE_NAME_KEY = "opencode.deviceName"
 const DIRECTORY_KEY = "opencode.directory"
 const DEVICE_ID_KEY = "opencode.deviceId"
+const MODEL_KEY = "opencode.model"
 const DEFAULT_SERVER = "http://127.0.0.1:4096"
 
 export type Identity =
@@ -23,6 +24,8 @@ type ConnectionValue = {
   identity: Identity
   client: Opencode | undefined
   error: string | undefined
+  model: ModelOption | undefined
+  setModel: (model: ModelOption | undefined) => Promise<void>
   setServer: (baseUrl: string, directory: string) => Promise<void>
   signIn: (baseUrl: string, directory: string, username: string, password: string) => Promise<void>
   pair: (baseUrl: string, directory: string, code: string, name: string) => Promise<void>
@@ -38,10 +41,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const [directory, setDirectory] = useState("")
   const [identity, setIdentity] = useState<Identity>({ kind: "none" })
   const [error, setError] = useState<string | undefined>()
+  const [model, setModelState] = useState<ModelOption | undefined>()
 
   useEffect(() => {
     ;(async () => {
-      const [url, password, username, token, name, dir, deviceId] = await Promise.all([
+      const [url, password, username, token, name, dir, deviceId, savedModel] = await Promise.all([
         SecureStore.getItemAsync(BASE_URL_KEY),
         SecureStore.getItemAsync(PASSWORD_KEY),
         SecureStore.getItemAsync(USERNAME_KEY),
@@ -49,9 +53,17 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         SecureStore.getItemAsync(DEVICE_NAME_KEY),
         SecureStore.getItemAsync(DIRECTORY_KEY),
         SecureStore.getItemAsync(DEVICE_ID_KEY),
+        SecureStore.getItemAsync(MODEL_KEY),
       ])
       if (url) setBaseUrl(url)
       if (dir) setDirectory(dir)
+      if (savedModel) {
+        try {
+          setModelState(JSON.parse(savedModel) as ModelOption)
+        } catch {
+          // A model saved by an older build is discarded rather than blocking startup.
+        }
+      }
       // A paired device token is preferred: it is scoped to this phone and survives a password change.
       if (token) setIdentity({ kind: "device", token, id: deviceId ?? "", name: name ?? "movil" })
       else if (password) setIdentity({ kind: "password", username: username ?? "opencode", password })
@@ -108,6 +120,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     setIdentity({ kind: "none" })
   }, [])
 
+  const setModel = useCallback(async (value: ModelOption | undefined) => {
+    setModelState(value)
+    if (value) await SecureStore.setItemAsync(MODEL_KEY, JSON.stringify(value))
+    else await SecureStore.deleteItemAsync(MODEL_KEY)
+  }, [])
+
   const credentials = useMemo<Credentials | undefined>(() => {
     if (identity.kind === "password") return { kind: "password", username: identity.username, password: identity.password }
     if (identity.kind === "device") return { kind: "device", token: identity.token }
@@ -138,6 +156,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     identity,
     client,
     error,
+    model,
+    setModel,
     setServer,
     signIn,
     pair,

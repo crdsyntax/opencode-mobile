@@ -8,6 +8,13 @@ import { fromV1, fromV2, type ChatMessage, type Protocol } from "./protocol"
 export type Message = ChatMessage
 export type { Device, DevicePairing, Handoff, Protocol, Session }
 
+/** A runnable model, identified the same way the prompt endpoint expects it. */
+export type ModelOption = {
+  readonly providerID: string
+  readonly modelID: string
+  readonly name: string
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly tag: string | undefined
@@ -163,14 +170,17 @@ export class Opencode {
     return fromV2(response.data)
   }
 
-  async prompt(sessionID: string, text: string) {
+  async prompt(sessionID: string, text: string, model?: ModelOption) {
     const id = encodeURIComponent(sessionID)
     if ((await this.detectProtocol()) === "v1") {
       // V1 takes a bare parts array and resolves only once the assistant has replied, so the
       // request has to stay open while the turn runs.
       await this.request(`/session/${id}/message`, {
         method: "POST",
-        body: JSON.stringify({ parts: [{ type: "text", text }] }),
+        body: JSON.stringify({
+          parts: [{ type: "text", text }],
+          ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+        }),
       })
       return
     }
@@ -178,6 +188,52 @@ export class Opencode {
       method: "POST",
       body: JSON.stringify({ prompt: { text } }),
     })
+  }
+
+  /**
+   * Lists the models the connected server can run.
+   *
+   * The catalog is read from the config providers route, whose `models` field is keyed by model id
+   * rather than being an array, and whose payload is wrapped in `data` on V2. Both shapes are
+   * normalized here so the picker does not have to care which protocol negotiated.
+   */
+  async models(): Promise<{ models: readonly ModelOption[]; fallback: ModelOption | undefined }> {
+    const path = (await this.detectProtocol()) === "v1" ? "/config/providers" : "/api/config/providers"
+    const body = await this.request<Record<string, unknown>>(path)
+    const payload = (body.data && typeof body.data === "object" ? body.data : body) as Record<string, unknown>
+    const providers = Array.isArray(payload.providers) ? (payload.providers as readonly Record<string, unknown>[]) : []
+    const models: ModelOption[] = []
+    for (const provider of providers) {
+      const providerID = typeof provider.id === "string" ? provider.id : undefined
+      if (!providerID) continue
+      const catalog = provider.models
+      // `models` arrives either as a map keyed by id or as an array of model records.
+      const entries =
+        Array.isArray(catalog)
+          ? (catalog as readonly Record<string, unknown>[]).map((value) => [undefined, value] as const)
+          : catalog && typeof catalog === "object"
+            ? Object.entries(catalog as Record<string, unknown>)
+            : []
+      for (const [key, value] of entries) {
+        if (!value || typeof value !== "object") continue
+        const record = value as Record<string, unknown>
+        const modelID = typeof record.id === "string" ? record.id : typeof key === "string" ? key : undefined
+        if (!modelID) continue
+        models.push({
+          providerID,
+          modelID,
+          name: typeof record.name === "string" && record.name ? record.name : modelID,
+        })
+      }
+    }
+    models.sort((left, right) => left.providerID.localeCompare(right.providerID) || left.modelID.localeCompare(right.modelID))
+    const defaults = (payload.default ?? {}) as Record<string, unknown>
+    const [fallbackProvider, fallbackModel] = Object.entries(defaults)[0] ?? []
+    const fallback =
+      typeof fallbackProvider === "string" && typeof fallbackModel === "string"
+        ? { providerID: fallbackProvider, modelID: fallbackModel, name: fallbackModel }
+        : undefined
+    return { models, fallback }
   }
 
   async interrupt(sessionID: string) {
